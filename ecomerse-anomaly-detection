@@ -1,0 +1,510 @@
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+np.random.seed(42)
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DATA_DIR = BASE_DIR / "data"
+OUTPUT_DIR = BASE_DIR / "output"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+NUM_TRANSACTIONS = 50000
+
+START_DATE = "2025-01-01"
+END_DATE = "2025-12-31"
+
+
+customers = [
+    f"CUST_{i:05d}"
+    for i in range(1, 5001)
+]
+
+products = [
+    f"P{i:03d}"
+    for i in range(1, 101)
+]
+
+categories = [
+    "Electronics",
+    "Home Appliances",
+    "Beauty",
+    "Sports",
+    "Clothing"
+]
+
+channels = [
+    "Online",
+    "Mobile App",
+    "Marketplace",
+    "Retail"
+]
+
+regions = [
+    "North",
+    "South",
+    "East",
+    "West"
+]
+
+payment_methods = [
+    "Credit Card",
+    "Debit Card",
+    "UPI",
+    "Net Banking",
+    "Wallet"
+]
+
+order_statuses = [
+    "Completed",
+    "Cancelled",
+    "Returned"
+]
+
+product_master = pd.DataFrame({
+    "product_id": products,
+
+    "product_category": np.random.choice(
+        categories,
+        size=len(products)
+    ),
+
+    "standard_cost": np.random.uniform(
+        500,
+        25000,
+        size=len(products)
+    ).round(2),
+
+    "standard_price": np.random.uniform(
+        800,
+        35000,
+        size=len(products)
+    ).round(2)
+})
+
+product_master["standard_price"] = np.maximum(
+    product_master["standard_price"],
+    product_master["standard_cost"] * 1.20
+).round(2)
+
+dates = pd.date_range(
+    start=START_DATE,
+    end=END_DATE,
+    freq="D"
+)
+
+data = pd.DataFrame({
+
+    "transaction_id": [
+        f"TXN_{i:07d}"
+        for i in range(1, NUM_TRANSACTIONS + 1)
+    ],
+
+    "transaction_date": np.random.choice(
+        dates,
+        size=NUM_TRANSACTIONS
+    ),
+
+    "customer_id": np.random.choice(
+        customers,
+        size=NUM_TRANSACTIONS
+    ),
+
+    "product_id": np.random.choice(
+        products,
+        size=NUM_TRANSACTIONS
+    ),
+
+    "channel": np.random.choice(
+        channels,
+        size=NUM_TRANSACTIONS,
+        p=[0.40, 0.25, 0.20, 0.15]
+    ),
+
+    "region": np.random.choice(
+        regions,
+        size=NUM_TRANSACTIONS
+    ),
+
+    "payment_method": np.random.choice(
+        payment_methods,
+        size=NUM_TRANSACTIONS
+    ),
+
+    "order_status": np.random.choice(
+        order_statuses,
+        size=NUM_TRANSACTIONS,
+        p=[0.85, 0.08, 0.07]
+    ),
+
+    "quantity": np.random.randint(
+        1,
+        6,
+        size=NUM_TRANSACTIONS
+    )
+})
+
+
+data = data.merge(
+    product_master,
+    on="product_id",
+    how="left"
+)
+
+data["selling_price"] = (
+    data["standard_price"]
+    * np.random.uniform(
+        0.95,
+        1.05,
+        size=NUM_TRANSACTIONS
+    )
+).round(2)
+
+
+data["expected_gross_revenue"] = (
+    data["quantity"]
+    * data["standard_price"]
+).round(2)
+
+
+
+data["discount_pct"] = np.random.choice(
+    [0.0, 5.0, 10.0, 15.0, 20.0],
+    size=NUM_TRANSACTIONS,
+    p=[0.35, 0.25, 0.20, 0.12, 0.08]
+).astype(float)
+
+data["discount_amount"] = (
+    data["expected_gross_revenue"]
+    * data["discount_pct"]
+    / 100
+).round(2)
+
+data["expected_net_revenue"] = (
+    data["expected_gross_revenue"]
+    - data["discount_amount"]
+).round(2)
+
+
+data["actual_revenue"] = (
+    data["quantity"]
+    * data["selling_price"]
+).round(2)
+
+data["leakage_type"] = "None"
+
+
+leakage_mask = (
+    np.random.random(NUM_TRANSACTIONS) < 0.10
+)
+
+leakage_types = [
+    "Excessive Discount",
+    "Pricing Error",
+    "Refund Leakage",
+    "Unbilled Quantity"
+]
+
+data.loc[
+    leakage_mask,
+    "leakage_type"
+] = np.random.choice(
+    leakage_types,
+    size=leakage_mask.sum()
+)
+
+
+
+mask = (
+    data["leakage_type"]
+    == "Excessive Discount"
+)
+
+data.loc[
+    mask,
+    "discount_pct"
+] = np.random.uniform(
+    25.0,
+    50.0,
+    size=mask.sum()
+).round(2)
+
+mask = (
+    data["leakage_type"]
+    == "Pricing Error"
+)
+
+data.loc[
+    mask,
+    "selling_price"
+] = (
+    data.loc[mask, "selling_price"]
+    * np.random.uniform(
+        0.60,
+        0.85,
+        size=mask.sum()
+    )
+).round(2)
+
+mask = (
+    data["leakage_type"]
+    == "Refund Leakage"
+)
+
+data.loc[
+    mask,
+    "actual_revenue"
+] = (
+    data.loc[mask, "actual_revenue"]
+    * np.random.uniform(
+        0.50,
+        0.80,
+        size=mask.sum()
+    )
+).round(2)
+
+
+mask = (
+    data["leakage_type"]
+    == "Unbilled Quantity"
+)
+
+data.loc[
+    mask,
+    "actual_revenue"
+] = (
+    data.loc[mask, "actual_revenue"]
+    * np.random.uniform(
+        0.60,
+        0.90,
+        size=mask.sum()
+    )
+).round(2)
+
+# ============================================================
+# 17. RECALCULATE EXPECTED NET REVENUE
+# ============================================================
+
+data["discount_amount"] = (
+    data["expected_gross_revenue"]
+    * data["discount_pct"]
+    / 100
+).round(2)
+
+data["expected_net_revenue"] = (
+    data["expected_gross_revenue"]
+    - data["discount_amount"]
+).round(2)
+
+# ============================================================
+# 18. REVENUE LEAKAGE
+# ============================================================
+
+data["revenue_leakage"] = (
+    data["expected_net_revenue"]
+    - data["actual_revenue"]
+).round(2)
+
+# Leakage cannot be negative
+data["revenue_leakage"] = (
+    data["revenue_leakage"]
+    .clip(lower=0)
+    .round(2)
+)
+
+# ============================================================
+# 19. LEAKAGE PERCENTAGE
+# ============================================================
+
+data["leakage_pct"] = np.where(
+    data["expected_net_revenue"] > 0,
+
+    (
+        data["revenue_leakage"]
+        / data["expected_net_revenue"]
+    ) * 100,
+
+    0
+)
+
+data["leakage_pct"] = (
+    data["leakage_pct"]
+    .round(2)
+)
+
+# ============================================================
+# 20. COST & MARGIN
+# ============================================================
+
+data["actual_cost"] = (
+    data["quantity"]
+    * data["standard_cost"]
+).round(2)
+
+data["expected_margin"] = (
+    data["expected_net_revenue"]
+    - data["actual_cost"]
+).round(2)
+
+data["actual_margin"] = (
+    data["actual_revenue"]
+    - data["actual_cost"]
+).round(2)
+
+# ============================================================
+# 21. DATA STATUS
+# ============================================================
+
+data["data_status"] = np.where(
+    data["leakage_type"] == "None",
+    "Normal",
+    "Potential Leakage"
+)
+
+# ============================================================
+# 22. SORT DATA
+# ============================================================
+
+data = data.sort_values(
+    "transaction_date"
+).reset_index(drop=True)
+
+# ============================================================
+# 23. SAVE CSV
+# ============================================================
+
+csv_file = (
+    DATA_DIR
+    / "raw_business_data.csv"
+)
+
+data.to_csv(
+    csv_file,
+    index=False
+)
+
+# ============================================================
+# 24. SAVE PARQUET
+# ============================================================
+
+parquet_file = (
+    DATA_DIR
+    / "raw_business_data.parquet"
+)
+
+try:
+
+    data.to_parquet(
+        parquet_file,
+        index=False
+    )
+
+    parquet_status = "Created"
+
+except Exception as e:
+
+    parquet_status = (
+        f"Not created: {e}"
+    )
+
+# ============================================================
+# 25. SUMMARY
+# ============================================================
+
+total_expected = (
+    data["expected_net_revenue"]
+    .sum()
+)
+
+total_actual = (
+    data["actual_revenue"]
+    .sum()
+)
+
+total_leakage = (
+    data["revenue_leakage"]
+    .sum()
+)
+
+leakage_records = (
+    data["leakage_type"]
+    != "None"
+).sum()
+
+# ============================================================
+# 26. CONSOLE OUTPUT
+# ============================================================
+
+print()
+print("=" * 65)
+print("REVENUE LEAKAGE DETECTION PROJECT")
+print("RAW BUSINESS DATA GENERATION COMPLETE")
+print("=" * 65)
+
+print(
+    f"Records generated : {len(data):,}"
+)
+
+print(
+    f"Unique customers  : "
+    f"{data['customer_id'].nunique():,}"
+)
+
+print(
+    f"Unique products   : "
+    f"{data['product_id'].nunique():,}"
+)
+
+print(
+    f"Expected revenue  : "
+    f"₹{total_expected:,.2f}"
+)
+
+print(
+    f"Actual revenue    : "
+    f"₹{total_actual:,.2f}"
+)
+
+print(
+    f"Revenue leakage   : "
+    f"₹{total_leakage:,.2f}"
+)
+
+print(
+    f"Leakage records   : "
+    f"{leakage_records:,}"
+)
+
+print()
+print("LEAKAGE TYPE DISTRIBUTION")
+print("-" * 65)
+
+print(
+    data["leakage_type"]
+    .value_counts()
+)
+
+print()
+print("FILES CREATED")
+print("-" * 65)
+
+print(
+    f"CSV     : {csv_file}"
+)
+
+print(
+    f"Parquet : {parquet_file}"
+)
+
+print(
+    f"Parquet status : {parquet_status}"
+)
+
+print("=" * 65)
+print()
+
